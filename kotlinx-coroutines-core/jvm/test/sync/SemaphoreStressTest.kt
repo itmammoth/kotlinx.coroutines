@@ -48,6 +48,7 @@ class SemaphoreStressTest : TestBase() {
     fun stressCancellation() = runTest {
         val n = 100_000 * stressTestMultiplier
         val semaphore = Semaphore(1)
+        semaphore.acquire()
         repeat(n) {
             val job = launch {
                 semaphore.acquire()
@@ -55,5 +56,8 @@ class SemaphoreStressTest : TestBase() {
             yield()
             job.cancelAndJoin()
         }
+        assertEquals(0, semaphore.availablePermits)
+        semaphore.release()
+        assertEquals(1, semaphore.availablePermits)
     }
 }

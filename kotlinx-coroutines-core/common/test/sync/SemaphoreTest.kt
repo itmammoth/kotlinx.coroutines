@@ -1,6 +1,7 @@
 package kotlinx.coroutines.sync
 
 import kotlinx.coroutines.TestBase
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import kotlin.test.Test
@@ -98,5 +99,21 @@ class SemaphoreTest : TestBase() {
         expect(8)
         yield()
         finish(10)
+    }
+
+    @Test
+    fun testCancellationReleasesSemaphore() = runTest {
+        val semaphore = Semaphore(1)
+        semaphore.acquire()
+        assertEquals(0, semaphore.availablePermits)
+        val job = launch {
+            assertFalse(semaphore.tryAcquire())
+            semaphore.acquire()
+        }
+        yield()
+        job.cancelAndJoin()
+        assertEquals(0, semaphore.availablePermits)
+        semaphore.release()
+        assertEquals(1, semaphore.availablePermits)
     }
 }
