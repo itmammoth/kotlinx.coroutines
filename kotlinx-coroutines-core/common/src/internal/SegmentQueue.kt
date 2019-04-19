@@ -24,8 +24,9 @@ internal abstract class SegmentQueue<S: Segment<S>>(createFirstSegment: Boolean 
             val firstSegment = newSegment(0)
             if (_head.compareAndSet(null, firstSegment))
                 startFrom = firstSegment
-            else
+            else {
                 startFrom = head!!
+            }
         }
         if (startFrom.id > id) return null
         // This method goes through `next` references and
@@ -49,6 +50,7 @@ internal abstract class SegmentQueue<S: Segment<S>>(createFirstSegment: Boolean 
             }
             cur = curNext
         }
+        if (cur.id != id) return null
         return cur
     }
 
@@ -65,7 +67,7 @@ internal abstract class SegmentQueue<S: Segment<S>>(createFirstSegment: Boolean 
      */
     private fun moveHeadForward(new: S) {
         while (true) {
-            val cur = _head.value!!
+            val cur = head!!
             if (cur.id > new.id) return
             if (_head.compareAndSet(cur, new)) {
                 new.prev.value = null
@@ -80,7 +82,7 @@ internal abstract class SegmentQueue<S: Segment<S>>(createFirstSegment: Boolean 
      */
     private fun moveTailForward(new: S) {
         while (true) {
-            val cur = _tail.value
+            val cur = tail
             if (cur !== null && cur.id > new.id) return
             if (_tail.compareAndSet(cur, new)) return
         }
@@ -105,27 +107,36 @@ internal abstract class Segment<S: Segment<S>>(val id: Long, prev: S?) {
      * Removes this node from the waiting queue and cleans all references to it.
      */
     fun remove() {
-        var next = this.next.value ?: return // tail can't be removed
+        check(removed) { " The segment should be logically removed at first "}
+        val next = this.next.value ?: return // tail can't be removed
         // Find the first non-removed node (tail is always non-removed)
-        while (next.removed) {
-            next = this.next.value ?: return
-        }
-        // Find the first non-removed `prev` and remove this node
-        var prev = prev.value
-        while (true) {
-            if (prev == null) {
-                next.prev.value = null
-                return
-            }
-            if (prev.removed) {
-                prev = prev.prev.value
-                continue
-            }
-            next.movePrevToLeft(prev)
-            prev.movePrevNextToRight(next)
-            if (next.removed || !prev.removed) return
-            prev = prev.prev.value
-        }
+        val prev = prev.value ?: return // head cannot be removed
+        next.movePrevToLeft(prev)
+        prev.movePrevNextToRight(next)
+        if (prev.removed)
+            prev.remove()
+        if (next.removed)
+            next.remove()
+
+//        while (next.removed) {
+//            next = next.next.value ?: return
+//        }
+//        // Find the first non-removed `prev` and remove this node
+//        var prev = prev.value
+//        while (true) {
+//            if (prev === null) {
+//                next.prev.value = null
+//                return
+//            }
+//            if (prev.removed) {
+//                prev = prev.prev.value
+//                continue
+//            }
+//            next.movePrevToLeft(prev)
+//            prev.movePrevNextToRight(next)
+//            if (next.removed || !prev.removed) return
+//            prev = prev.prev.value
+//        }
     }
 
     /**
