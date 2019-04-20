@@ -1,24 +1,69 @@
 package kotlinx.coroutines.sync
 
 import kotlinx.atomicfu.*
-import kotlinx.coroutines.CancelHandler
-import kotlinx.coroutines.CancellableContinuation
-import kotlinx.coroutines.asHandler
+import kotlinx.coroutines.*
 import kotlinx.coroutines.internal.*
-import kotlinx.coroutines.suspendAtomicCancellableCoroutine
+import kotlinx.coroutines.selects.select
 import kotlin.coroutines.resume
 import kotlin.jvm.JvmField
 import kotlin.math.max
 
+/**
+ * A counting semaphore for coroutines. It maintains a number of available permits.
+ * Each [acquire] suspends if necessary until a permit is available, and then takes it.
+ * Each [release] adds a permit, potentially releasing a suspended acquirer.
+ *
+ * Semaphore with `maxPermits = 1` is essentially a [Mutex].
+ **/
 public interface Semaphore {
+    /**
+     * Returns the current number of available permits available in this semaphore.
+     */
     public val availablePermits: Int
-    public fun tryAcquire(): Boolean
+
+    /**
+     * Acquires a permit from this semaphore, suspending until one is available.
+     * All suspending acquirers are processed in first-in-first-out (FIFO) order.
+     *
+     * This suspending function is cancellable. If the [Job] of the current coroutine is cancelled or completed while this
+     * function is suspended, this function immediately resumes with [CancellationException].
+     *
+     * *Cancellation of suspended lock invocation is atomic* -- when this function
+     * throws [CancellationException] it means that the mutex was not locked.
+     *
+     * Note, that this function does not check for cancellation when it is not suspended.
+     * Use [yield] or [CoroutineScope.isActive] to periodically check for cancellation in tight loops if needed.
+     *
+     * Use [tryAcquire] to try acquire a permit of this semaphore without suspension.
+     */
     public suspend fun acquire()
+
+    /**
+     * Tries to acquire a permit from this semaphore without suspension.
+     *
+     * @return `true` if a permit was acquired, `false` otherwise.
+     */
+    public fun tryAcquire(): Boolean
+
+    /**
+     * Releases a permit, returning it into this semaphore. Resumes the first
+     * suspending acquirer if there is one at the point of invocation.
+     */
     public fun release()
 }
 
+/**
+ * Creates new [Semaphore] instance.
+ */
+@Suppress("FunctionName")
 public fun Semaphore(maxPermits: Int, acquiredPermits: Int = 0): Semaphore = SemaphoreImpl(maxPermits, acquiredPermits)
 
+/**
+ * Executes the given [action] with acquiring a permit from this semaphore at the beginning
+ * and releasing it after the [action] is completed.
+ *
+ * @return the return value of the [action].
+ */
 public suspend inline fun <T> Semaphore.withSemaphore(action: () -> T): T {
     acquire()
     try {
